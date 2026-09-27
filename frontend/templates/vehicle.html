@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% block title %}Vehicle History{% endblock %}
+{% block content %}
+<h3 class="section-title">Vehicle History</h3>
+<p class="muted">Ek gaadi ke saare violations ek jagah — repeat offenders pakadne ke liye.</p>
+<div class="input-group mb-3" style="max-width:460px">
+<input id="q" class="form-control" placeholder="e.g. MH15AB1234" onkeydown="if(event.key==='Enter')search()">
+<button class="btn btn-primary" onclick="search()">Search</button>
+</div>
+<div id="out" class="muted">Number daalke Search dabao.</div>
+<script>
+async function search() {
+  const q = document.getElementById('q').value.trim();
+  if (!q) return;
+  const d = await (await fetch('/api/vehicles/' + encodeURIComponent(q))).json();
+  if (!d.violations.length) {
+    document.getElementById('out').innerHTML = `<div class="alert alert-dark2">No violations for <b>${d.vehicle_number}</b>.</div>`;
+    return;
+  }
+  document.getElementById('out').innerHTML =
+    `<div class="card mb-3"><div class="card-body"><h5>Vehicle: ${d.vehicle_number}</h5>
+     <p class="mb-0">Total Violations: <b>${d.total_violations}</b> | First: ${d.first_seen||''} | Last: ${d.last_seen||''}</p></div></div>` +
+    `<div class="card"><div class="card-body table-responsive"><table class="table"><thead><tr><th>#</th><th>Violation</th><th>Time</th><th>Status</th><th>Evidence</th></tr></thead><tbody>` +
+      d.violations.map((v,i)=>`<tr><td>${i+1}</td><td>${v.violation_type}</td><td>${v.timestamp}</td><td>${v.status}</td><td>${v.evidence_image ? `<a href="/${v.evidence_image}" target="_blank"><img class="ev" src="/${v.evidence_image}" onerror="this.src='/static/placeholder.svg'"></a>` : '—'}</td></tr>`).join('') +
+      `</tbody></table></div></div>`;
+}
+</script>
+{% endblock %}

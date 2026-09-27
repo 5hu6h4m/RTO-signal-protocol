@@ -1,0 +1,56 @@
+{% extends "base.html" %}{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h3 class="section-title">Junction Overview</h3>
+<p class="muted">Live signal + today's counts. Auto-refreshes every 5 seconds.</p>
+<div class="row g-3" id="cards">
+  <div class="col-6 col-md-2"><div class="card stat"><div class="card-body"><h6>Total</h6><h3 id="c-total">–</h3></div></div></div>
+  <div class="col-6 col-md-2"><div class="card stat s-green"><div class="card-body"><h6>Today</h6><h3 id="c-today">–</h3></div></div></div>
+  <div class="col-6 col-md-2"><div class="card stat s-red"><div class="card-body"><h6>Red Light</h6><h3 id="c-red">–</h3></div></div></div>
+  <div class="col-6 col-md-3"><div class="card stat s-yellow"><div class="card-body"><h6>No Helmet</h6><h3 id="c-helmet">–</h3></div></div></div>
+  <div class="col-6 col-md-3"><div class="card stat s-yellow"><div class="card-body"><h6>Triple Riding</h6><h3 id="c-triple">–</h3></div></div></div>
+</div>
+<div class="row mt-3 g-3">
+  <div class="col-md-8">
+    <div class="card"><div class="card-body">
+      <h5 class="section-title">Recent Violations</h5>
+      <div class="table-responsive"><table class="table table-hover"><thead><tr>
+      <th>Vehicle</th><th>Violation</th><th>Date</th><th>Time</th><th>Status</th><th>Evidence</th>
+      </tr></thead><tbody id="recent"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody></table></div>
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card"><div class="card-body">
+      <h5 class="section-title">How it works</h5>
+      <ol class="muted small mb-2">
+        <li>Arduino runs GREEN 8s → YELLOW 2s → RED 8s.</li>
+        <li>During RED, IR trip → buzzer 2s + <code>VIOLATION_TRIGGERED</code>.</li>
+        <li>Server grabs webcam frame → YOLO + plate OCR → saves evidence.</li>
+        <li>Row appears here + on Live page instantly.</li>
+      </ol>
+      <a class="btn btn-primary w-100" href="/live">Open Live Monitoring</a>
+      <div class="muted small mt-2">Kal hardware pe: <code>DEMO_MODE=0</code> karke restart.</div>
+    </div></div>
+  </div>
+</div>
+<script>
+let lastMaxId = 0;
+async function load() {
+  await refreshStrip();
+  const st = await (await fetch('/api/statistics')).json();
+  const t = st.today_by_type || {};
+  document.getElementById('c-total').textContent = st.total_violations ?? 0;
+  document.getElementById('c-today').textContent = st.today_total ?? 0;
+  document.getElementById('c-red').textContent = t['Red Light Violation'] || 0;
+  document.getElementById('c-helmet').textContent = t['No Helmet'] || 0;
+  document.getElementById('c-triple').textContent = t['Triple Riding'] || 0;
+  const rows = await (await fetch('/api/violations?limit=10')).json();
+  document.getElementById('recent').innerHTML = rows.length ? rows.map(rowHtml).join('') : '<tr><td colspan="6" class="muted">No violations yet — try Live page demo buttons.</td></tr>';
+  if (rows.length) {
+    const mx = Math.max(...rows.map(r => r.id || 0));
+    if (lastMaxId && mx > lastMaxId) toast('New violation: ' + rows[0].violation_type + ' (' + rows[0].vehicle_number + ')');
+    lastMaxId = Math.max(lastMaxId, mx);
+  }
+}
+load(); setInterval(load, 5000);
+</script>
+{% endblock %}

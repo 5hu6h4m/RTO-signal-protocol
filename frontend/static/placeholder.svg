@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360">
+<rect width="640" height="360" fill="#1f2937"/>
+<text x="320" y="170" fill="#9ca3af" font-size="24" text-anchor="middle" font-family="sans-serif">No evidence image</text>
+<text x="320" y="200" fill="#6b7280" font-size="14" text-anchor="middle" font-family="sans-serif">Appears here when a violation is captured</text>
+</svg>

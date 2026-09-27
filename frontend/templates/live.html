@@ -1,0 +1,98 @@
+{% extends "base.html" %}{% block title %}Live{% endblock %}
+{% block content %}
+<h3 class="section-title">Live Monitoring</h3>
+<p class="muted">Laptop webcam ka real feed + signal status. Camera permission OS/browser se allow karna.</p>
+<div class="alert alert-dark2" id="cam-banner">Camera check ho raha hai…</div>
+<div class="row g-3">
+  <div class="col-md-8">
+    <div class="feed-wrap">
+      <img id="feed" src="/api/camera/feed" alt="live feed">
+      <div class="feed-off" id="feed-off">
+        <div><b>Camera feed unavailable</b></div>
+        <div class="muted small" id="feed-err">Webcam busy ya disconnected ho sakti hai.</div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary btn-sm" onclick="reloadFeed()">Retry camera</button>
+          <button class="btn btn-secondary btn-sm" onclick="snapshot()">Test snapshot</button>
+        </div>
+      </div>
+    </div>
+    <div class="d-flex gap-2 mt-2 flex-wrap">
+      <button class="btn btn-outline-light btn-sm" onclick="reloadFeed()">↻ Reconnect</button>
+      <button class="btn btn-outline-light btn-sm" onclick="snapshot()">📷 Snapshot test</button>
+      <span class="muted small ms-auto" id="frame-info"></span>
+    </div>
+    <div class="mt-2"><img id="snap" class="img-fluid border rounded" style="display:none;max-height:220px" alt="snapshot"></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card mb-3"><div class="card-body">
+      <h5 class="section-title">Signal + Hardware</h5>
+      <div id="live-status" class="muted">Connecting…</div>
+    </div></div>
+    <div class="card mb-3"><div class="card-body">
+      <h5 class="section-title">Real pipeline test <small class="muted">(no fake AI)</small></h5>
+      <button class="btn btn-success w-100 mb-2" onclick="realRed()">🚦 Capture violation on live frame</button>
+      <div class="muted small">Ye button current webcam frame pe <b>asli</b> YOLO + plate OCR chalata hai. Plate unclear hua to "Not Clearly Detected" save hoga.</div>
+    </div></div>
+    <div class="card mb-3"><div class="card-body">
+      <h5 class="section-title">Demo controls <small class="muted">(labelled simulation)</small></h5>
+      <button class="btn btn-warning w-100 mb-2" onclick="demo('Red Light Violation')">Simulate Red-Light</button>
+      <button class="btn btn-warning w-100 mb-2" onclick="demo('No Helmet')">Simulate No-Helmet</button>
+      <button class="btn btn-warning w-100 mb-2" onclick="demo('Triple Riding')">Simulate Triple Riding</button>
+    </div></div>
+    <div class="card"><div class="card-body">
+      <h5 class="section-title">Latest violation</h5>
+      <div id="latest" class="muted">None yet.</div>
+    </div></div>
+  </div>
+</div>
+<script>
+let lastId = 0;
+async function demo(type) {
+  await fetch('/api/demo/trigger', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({violation_type: type, vehicle_number: 'MH15AB1234'})});
+  refresh();
+}
+async function realRed() {
+  const r = await (await fetch('/api/demo/simulate-red-light', {method:'POST'})).json();
+  toast('Pipeline ran, violation id: ' + r.id + '. ' + (r.note || ''));
+  refresh();
+}
+async function snapshot() {
+  const img = document.getElementById('snap');
+  img.style.display = 'block';
+  img.src = '/api/camera/snapshot?ts=' + Date.now();
+  toast('Snapshot liya — dikha to camera OK hai.');
+}
+async function camCheck() {
+  try {
+    const cs = await (await fetch('/api/camera/status')).json();
+    const b = document.getElementById('cam-banner');
+    document.getElementById('frame-info').textContent = cs.available ? ('frames: ' + cs.frames_read + ' | src: ' + cs.source) : '';
+    if (cs.available) {
+      b.className = 'alert alert-success';
+      b.textContent = 'Camera CONNECTED (' + cs.source + ') — live feed chal raha hai.';
+      document.getElementById('feed-off').classList.remove('show');
+    } else {
+      b.className = 'alert alert-danger';
+      b.textContent = 'Camera NOT AVAILABLE: ' + (cs.last_error || 'webcam busy/disconnected');
+      document.getElementById('feed-err').textContent = cs.last_error || '';
+      document.getElementById('feed-off').classList.add('show');
+    }
+  } catch(e) {}
+}
+async function refresh() {
+  const s = await refreshStrip();
+  if (s) document.getElementById('live-status').innerHTML =
+    `Signal: <b>${s.signal_state}</b><br>Arduino: <b>${s.arduino}</b><br>Camera: <b>${s.camera}</b><br>Helmet model: <b>${s.helmet_model ? 'installed' : 'not installed (heuristic only)'}</b>`;
+  const rows = await (await fetch('/api/violations?limit=1')).json();
+  document.getElementById('latest').innerHTML = rows.length ? `<table class="table"><tbody>${rowHtml(rows[0])}</tbody></table>` : 'None yet.';
+  if (rows.length && rows[0].id > lastId) {
+    if (lastId) toast('New violation: ' + rows[0].violation_type);
+    lastId = rows[0].id;
+  } else if (rows.length) lastId = Math.max(lastId, rows[0].id);
+}
+camCheck(); refresh();
+setInterval(() => { camCheck(); refresh(); }, 5000);
+</script>
+{% endblock %}

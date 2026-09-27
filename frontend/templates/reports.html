@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% block title %}Reports{% endblock %}
+{% block content %}
+<h3 class="section-title">Daily Report</h3>
+<p class="muted">Aaj ka summary — viva me ye page dikhana.</p>
+<div class="row g-3" id="top"></div>
+<div class="card mt-3"><div class="card-body">
+<div id="rep" class="muted">Loading…</div>
+</div></div>
+<script>
+(async () => {
+  await refreshStrip();
+  const st = await (await fetch('/api/statistics')).json();
+  const t = st.today_by_type || {};
+  document.getElementById('top').innerHTML =
+    `<div class="col-md-4"><div class="card stat"><div class="card-body"><h6>Date</h6><h3 style="font-size:1.2rem">${st.date}</h3></div></div></div>` +
+    `<div class="col-md-4"><div class="card stat s-green"><div class="card-body"><h6>Today</h6><h3>${st.today_total}</h3></div></div></div>` +
+    `<div class="col-md-4"><div class="card stat s-red"><div class="card-body"><h6>Repeat vehicles</h6><h3>${st.repeat_vehicles_count}</h3></div></div></div>`;
+  const rows = Object.entries(t).map(([k,v])=>`<tr><td>${k}</td><td><b>${v}</b></td></tr>`).join('') || '<tr><td colspan=2>No violations today.</td></tr>';
+  const reps = (st.repeat_vehicles||[]).map(r=>`<tr><td>${r.vehicle_number}</td><td>${r.total_violations}</td></tr>`).join('');
+  document.getElementById('rep').innerHTML =
+    `<p>Most common today: <b>${st.most_common}</b> | All-time total: <b>${st.total_violations}</b></p>
+     <h6>By type</h6><table class="table"><thead><tr><th>Violation</th><th>Count</th></tr></thead><tbody>${rows}</tbody></table>` +
+    (reps ? `<h6 class="mt-3">Repeat offenders</h6><table class="table"><thead><tr><th>Vehicle</th><th>Total</th></tr></thead><tbody>${reps}</tbody></table>` : '');
+})();
+</script>
+{% endblock %}

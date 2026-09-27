@@ -1,0 +1,9 @@
+# Core computer vision + web + hardware deps (college prototype, no pins = max compat)
+opencv-python
+numpy
+ultralytics
+flask
+pyserial
+python-dotenv
+pillow
+pytesseract

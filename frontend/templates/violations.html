@@ -1,41 +1,203 @@
-{% extends "base.html" %}{% block title %}Violations{% endblock %}
+{% extends "base.html" %}
+{% block title %}Violation Records & E-Challan Repository{% endblock %}
+
 {% block content %}
-<h3 class="section-title">All Violations</h3>
-<p class="muted">Filter + evidence photos. Click photo for full size.</p>
-<div class="row mb-3 g-2">
-  <div class="col-md-3">
-    <select id="f" class="form-select" onchange="load()">
-      <option value="">All types</option><option>No Helmet</option>
-      <option>Triple Riding</option><option>Red Light Violation</option><option>Other</option>
-    </select>
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h3 class="section-title mb-0">Traffic Violation Records</h3>
+    <p class="text-secondary small mb-0">Search, verify evidence photos, and view official MVA digital e-challans.</p>
   </div>
-  <div class="col-md-3"><input id="d" type="date" class="form-control" onchange="load()"></div>
-  <div class="col-md-3"><button class="btn btn-primary" onclick="load()">Apply</button>
-  <button class="btn btn-outline-light" onclick="csv()">Export CSV</button></div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-danger btn-sm" onclick="clearAllViolations()">🗑️ Clear All Records</button>
+    <button class="btn btn-outline-light btn-sm" onclick="exportCSV()">📥 Export CSV</button>
+    <button class="btn btn-primary btn-sm" onclick="openSimModal()">➕ Manual Case Simulator</button>
+  </div>
 </div>
-<div class="card"><div class="card-body table-responsive">
-<table class="table table-hover"><thead><tr>
-<th>Vehicle</th><th>Violation</th><th>Date</th><th>Time</th><th>Status</th><th>Evidence</th>
-</tr></thead><tbody id="rows"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody></table>
-</div></div>
+
+<!-- Filters Bar -->
+<div class="card mb-3">
+  <div class="card-body p-3">
+    <div class="row g-2 align-items-center">
+      <div class="col-md-3">
+        <label class="text-secondary small fw-bold">OFFENSE TYPE</label>
+        <select id="f-type" class="form-select form-select-sm" onchange="loadViolations()">
+          <option value="">All Violations</option>
+          <option>Red Light Violation</option>
+          <option>No Helmet</option>
+          <option>Triple Riding</option>
+          <option>Over Speeding</option>
+          <option>Wrong Way Driving</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="text-secondary small fw-bold">DATE</label>
+        <input id="f-date" type="date" class="form-control form-control-sm" onchange="loadViolations()">
+      </div>
+      <div class="col-md-4">
+        <label class="text-secondary small fw-bold">SEARCH NUMBER PLATE</label>
+        <input id="f-search" type="text" class="form-control form-control-sm" placeholder="e.g. MH12DE1432" oninput="filterByPlate()">
+      </div>
+      <div class="col-md-2 d-flex align-items-end">
+        <button class="btn btn-secondary btn-sm w-100" onclick="resetFilters()">Reset Filters</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Violations Table -->
+<div class="card">
+  <div class="card-body p-0 table-responsive">
+    <table class="table table-hover">
+      <thead>
+        <tr>
+          <th>Vehicle Plate</th>
+          <th>Offense Description</th>
+          <th>Date</th>
+          <th>Time</th>
+          <th>Status</th>
+          <th>Evidence Photo</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="v-rows">
+        <tr><td colspan="7" class="text-center text-secondary py-5">Loading records…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Manual Simulation Modal -->
+<div class="modal fade" id="simModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold">Generate Violation Case</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label small fw-bold">Vehicle Number Plate</label>
+          <input type="text" id="sim-plate" class="form-control" value="MH12DE1432" placeholder="e.g. MH15AB1234">
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-bold">Violation Category</label>
+          <select id="sim-type" class="form-select">
+            <option>Red Light Violation</option>
+            <option>No Helmet</option>
+            <option>Triple Riding</option>
+            <option>Over Speeding</option>
+            <option>Wrong Way Driving</option>
+          </select>
+        </div>
+        <p class="text-secondary small mb-0">
+          The system will generate an authentic CCTV evidence snapshot, register the incident in the database, and issue an official E-Challan.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" onclick="submitSimCase()">Capture & Issue Challan</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script>
-let cache = [];
-async function load() {
-  const f = document.getElementById('f').value;
-  const d = document.getElementById('d').value;
-  let url = '/api/violations?limit=200';
-  if (f) url += '&type=' + encodeURIComponent(f);
-  if (d) url += '&date=' + encodeURIComponent(d);
-  cache = await (await fetch(url)).json();
-  document.getElementById('rows').innerHTML = cache.length ? cache.map(rowHtml).join('') : '<tr><td colspan="6" class="muted">No records.</td></tr>';
+let violationsCache = [];
+
+async function loadViolations() {
+  const type = document.getElementById('f-type').value;
+  const date = document.getElementById('f-date').value;
+
+  let url = '/api/violations?limit=250';
+  if (type) url += '&type=' + encodeURIComponent(type);
+  if (date) url += '&date=' + encodeURIComponent(date);
+
+  try {
+    violationsCache = await (await fetch(url)).json();
+    renderTable(violationsCache);
+  } catch(e) {
+    document.getElementById('v-rows').innerHTML = '<tr><td colspan="7" class="text-center text-danger py-4">Failed to load records: ' + e.message + '</td></tr>';
+  }
 }
-function csv() {
-  const head = 'vehicle,violation,timestamp,status\n';
-  const body = cache.map(v => [v.vehicle_number, v.violation_type, v.timestamp, '"' + (v.status||'').replace(/"/g,'') + '"'].join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([head + body], {type:'text/csv'}));
-  a.download = 'violations.csv'; a.click();
+
+function renderTable(list) {
+  const tbody = document.getElementById('v-rows');
+  if (!list || !list.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-secondary py-5">No violations found matching the criteria.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(rowHtml).join('');
 }
-load();
+
+function filterByPlate() {
+  const q = document.getElementById('f-search').value.trim().toUpperCase();
+  if (!q) {
+    renderTable(violationsCache);
+    return;
+  }
+  const filtered = violationsCache.filter(v => (v.vehicle_number || '').toUpperCase().includes(q));
+  renderTable(filtered);
+}
+
+function resetFilters() {
+  document.getElementById('f-type').value = '';
+  document.getElementById('f-date').value = '';
+  document.getElementById('f-search').value = '';
+  loadViolations();
+}
+
+function exportCSV() {
+  if (!violationsCache.length) {
+    toast('No records to export');
+    return;
+  }
+  const headers = ['ID', 'Vehicle Number', 'Violation Type', 'Timestamp', 'Location', 'Status'];
+  const rows = violationsCache.map(v => [
+    v.id,
+    v.vehicle_number,
+    `"${v.violation_type}"`,
+    v.timestamp,
+    `"${v.location || 'College Demo Junction'}"`,
+    `"${v.status}"`
+  ]);
+  const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement('a');
+  link.setAttribute('href', encodedUri);
+  link.setAttribute('download', `rto_violations_${new Date().toISOString().slice(0,10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  toast('CSV Export downloaded');
+}
+
+function openSimModal() {
+  const modal = new bootstrap.Modal(document.getElementById('simModal'));
+  modal.show();
+}
+
+async function submitSimCase() {
+  const plate = document.getElementById('sim-plate').value.trim() || 'MH15AB1234';
+  const type = document.getElementById('sim-type').value;
+
+  try {
+    const res = await (await fetch('/api/violations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vehicle_number: plate, violation_type: type })
+    })).json();
+
+    bootstrap.Modal.getInstance(document.getElementById('simModal')).hide();
+    toast(`✅ Case registered for <b>${plate}</b>`);
+    loadViolations();
+    openChallan(res.id);
+  } catch(e) {
+    toast('Error creating case: ' + e.message);
+  }
+}
+
+loadViolations();
 </script>
 {% endblock %}

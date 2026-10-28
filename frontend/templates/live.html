@@ -1,98 +1,224 @@
-{% extends "base.html" %}{% block title %}Live{% endblock %}
+{% extends "base.html" %}
+{% block title %}Live CCTV Junction Monitoring{% endblock %}
+
 {% block content %}
-<h3 class="section-title">Live Monitoring</h3>
-<p class="muted">Laptop webcam ka real feed + signal status. Camera permission OS/browser se allow karna.</p>
-<div class="alert alert-dark2" id="cam-banner">Camera check ho raha hai…</div>
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h3 class="section-title mb-0">Live CCTV Junction Surveillance</h3>
+    <p class="text-secondary small mb-0">Real-time computer vision stream with stop-line enforcement telemetry.</p>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    <div class="btn-group" role="group">
+      <button id="btn-cam-sim" class="btn btn-primary btn-sm" onclick="switchCameraMode('simulated')">🏙️ Simulated Junction</button>
+      <button id="btn-cam-web" class="btn btn-outline-light btn-sm" onclick="switchCameraMode('webcam')">📷 Laptop Webcam</button>
+    </div>
+    <button class="btn btn-outline-light btn-sm" onclick="reloadFeed()">🔄 Reconnect</button>
+    <button class="btn btn-outline-light btn-sm" onclick="takeSnapshot()">📸 Snapshot</button>
+  </div>
+</div>
+
 <div class="row g-3">
-  <div class="col-md-8">
+  <!-- Left Side: Video Feed Stream -->
+  <div class="col-lg-8">
     <div class="feed-wrap">
-      <img id="feed" src="/api/camera/feed" alt="live feed">
-      <div class="feed-off" id="feed-off">
-        <div><b>Camera feed unavailable</b></div>
-        <div class="muted small" id="feed-err">Webcam busy ya disconnected ho sakti hai.</div>
-        <div class="d-flex gap-2">
-          <button class="btn btn-primary btn-sm" onclick="reloadFeed()">Retry camera</button>
-          <button class="btn btn-secondary btn-sm" onclick="snapshot()">Test snapshot</button>
+      <img id="feed" src="/api/camera/feed" alt="Live CCTV Feed">
+      <div class="feed-hud-top">
+        <span class="hud-tag"><span class="live-pulse"></span> LIVE [CCTV-04]</span>
+        <span id="hud-signal" class="hud-tag mono">SIGNAL: GREEN</span>
+      </div>
+    </div>
+
+    <!-- Telemetry status row under camera -->
+    <div class="d-flex justify-content-between align-items-center mt-2 px-1 text-secondary small mono">
+      <span>AI Pipeline: <b>YOLOv8n Vehicle & Rider Tracker</b></span>
+      <span id="cam-info">Resolution: 640x480 • 25.0 FPS</span>
+    </div>
+
+    <!-- Snapshot Preview (Shown on Snapshot Click) -->
+    <div id="snap-box" class="card mt-3 d-none">
+      <div class="card-body p-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="mb-0 fw-bold text-info">📸 Captured Camera Snapshot</h6>
+          <button class="btn-close btn-close-white btn-sm" onclick="document.getElementById('snap-box').classList.add('d-none')"></button>
+        </div>
+        <img id="snap" class="img-fluid rounded border border-secondary" alt="Snapshot">
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Side: Signal Control & Live Telemetry -->
+  <div class="col-lg-4">
+    <!-- Signal Light & Controller Card -->
+    <div class="card mb-3">
+      <div class="card-body">
+        <h5 class="section-title">Signal & Sensor Status</h5>
+
+        <div class="d-flex justify-content-between align-items-center p-3 bg-dark rounded-3 mb-3 border border-secondary border-opacity-25">
+          <div class="d-flex align-items-center gap-3">
+            <div id="live-sig-dot" class="signal-light red" style="width:36px;height:36px"></div>
+            <div>
+              <div id="live-sig-state" class="fw-bold fs-5 mono text-danger">RED</div>
+              <small class="text-secondary">Stop-Line Enforced</small>
+            </div>
+          </div>
+          <div class="text-end">
+            <span class="text-secondary small d-block">COUNTDOWN</span>
+            <span id="live-sig-timer" class="signal-countdown-badge fs-5">08s</span>
+          </div>
+        </div>
+
+        <!-- Signal Manual Overrides -->
+        <div class="btn-group w-100 mb-3" role="group">
+          <button class="btn btn-outline-danger btn-sm" onclick="setSignal('RED')">Force RED</button>
+          <button class="btn btn-outline-warning btn-sm" onclick="setSignal('YELLOW')">YELLOW</button>
+          <button class="btn btn-outline-success btn-sm" onclick="setSignal('GREEN')">GREEN</button>
+          <button class="btn btn-outline-light btn-sm" onclick="setSignal('AUTO')">AUTO</button>
+        </div>
+
+        <!-- IR Obstacle Beam Trip Button -->
+        <div class="ir-beam-wrap mb-2">
+          <div>
+            <span class="small text-muted d-block fw-bold">IR STOP-LINE SENSOR</span>
+            <span id="live-ir-text" class="fw-bold text-success mono small">● BEAM INTACT</span>
+          </div>
+          <div id="ir-laser" class="ir-laser-line w-25"></div>
+        </div>
+
+        <button class="btn btn-danger w-100 py-2 shadow fw-bold" onclick="triggerIRBeam()">
+          🚗 Trip Stop-Line (Simulate Crossing) <span class="badge bg-black bg-opacity-50 ms-1">Spacebar</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Quick Scenarios Triggers -->
+    <div class="card mb-3">
+      <div class="card-body">
+        <h5 class="section-title">Enforcement Scenarios</h5>
+        <div class="d-grid gap-2">
+          <button class="btn btn-outline-light btn-sm text-start" onclick="runScenario('1')">
+            🚨 <b>Red Light Violation</b> <span class="text-secondary float-end">MH12DE1432</span>
+          </button>
+          <button class="btn btn-outline-light btn-sm text-start" onclick="runScenario('2')">
+            🪖 <b>No Helmet Detected</b> <span class="text-secondary float-end">MH14AB9821</span>
+          </button>
+          <button class="btn btn-outline-light btn-sm text-start" onclick="runScenario('3')">
+            👥 <b>Triple Riding Detected</b> <span class="text-secondary float-end">MH15BT4554</span>
+          </button>
         </div>
       </div>
     </div>
-    <div class="d-flex gap-2 mt-2 flex-wrap">
-      <button class="btn btn-outline-light btn-sm" onclick="reloadFeed()">↻ Reconnect</button>
-      <button class="btn btn-outline-light btn-sm" onclick="snapshot()">📷 Snapshot test</button>
-      <span class="muted small ms-auto" id="frame-info"></span>
+
+    <!-- Latest Captured Violation -->
+    <div class="card">
+      <div class="card-body">
+        <h5 class="section-title">Latest Recorded Offense</h5>
+        <div id="latest-box" class="text-secondary small">Loading latest incident…</div>
+      </div>
     </div>
-    <div class="mt-2"><img id="snap" class="img-fluid border rounded" style="display:none;max-height:220px" alt="snapshot"></div>
-  </div>
-  <div class="col-md-4">
-    <div class="card mb-3"><div class="card-body">
-      <h5 class="section-title">Signal + Hardware</h5>
-      <div id="live-status" class="muted">Connecting…</div>
-    </div></div>
-    <div class="card mb-3"><div class="card-body">
-      <h5 class="section-title">Real pipeline test <small class="muted">(no fake AI)</small></h5>
-      <button class="btn btn-success w-100 mb-2" onclick="realRed()">🚦 Capture violation on live frame</button>
-      <div class="muted small">Ye button current webcam frame pe <b>asli</b> YOLO + plate OCR chalata hai. Plate unclear hua to "Not Clearly Detected" save hoga.</div>
-    </div></div>
-    <div class="card mb-3"><div class="card-body">
-      <h5 class="section-title">Demo controls <small class="muted">(labelled simulation)</small></h5>
-      <button class="btn btn-warning w-100 mb-2" onclick="demo('Red Light Violation')">Simulate Red-Light</button>
-      <button class="btn btn-warning w-100 mb-2" onclick="demo('No Helmet')">Simulate No-Helmet</button>
-      <button class="btn btn-warning w-100 mb-2" onclick="demo('Triple Riding')">Simulate Triple Riding</button>
-    </div></div>
-    <div class="card"><div class="card-body">
-      <h5 class="section-title">Latest violation</h5>
-      <div id="latest" class="muted">None yet.</div>
-    </div></div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
 <script>
-let lastId = 0;
-async function demo(type) {
-  await fetch('/api/demo/trigger', {method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({violation_type: type, vehicle_number: 'MH15AB1234'})});
-  refresh();
-}
-async function realRed() {
-  const r = await (await fetch('/api/demo/simulate-red-light', {method:'POST'})).json();
-  toast('Pipeline ran, violation id: ' + r.id + '. ' + (r.note || ''));
-  refresh();
-}
-async function snapshot() {
-  const img = document.getElementById('snap');
-  img.style.display = 'block';
-  img.src = '/api/camera/snapshot?ts=' + Date.now();
-  toast('Snapshot liya — dikha to camera OK hai.');
-}
-async function camCheck() {
+let lastVid = 0;
+
+async function switchCameraMode(mode) {
   try {
-    const cs = await (await fetch('/api/camera/status')).json();
-    const b = document.getElementById('cam-banner');
-    document.getElementById('frame-info').textContent = cs.available ? ('frames: ' + cs.frames_read + ' | src: ' + cs.source) : '';
-    if (cs.available) {
-      b.className = 'alert alert-success';
-      b.textContent = 'Camera CONNECTED (' + cs.source + ') — live feed chal raha hai.';
-      document.getElementById('feed-off').classList.remove('show');
+    const res = await (await fetch('/api/hardware/camera-mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: mode })
+    })).json();
+
+    document.getElementById('btn-cam-sim').className = (mode === 'simulated') ? 'btn btn-primary btn-sm' : 'btn btn-outline-light btn-sm';
+    document.getElementById('btn-cam-web').className = (mode === 'webcam') ? 'btn btn-primary btn-sm' : 'btn btn-outline-light btn-sm';
+
+    toast(`Camera switched to: <b>${mode === 'webcam' ? 'Laptop Webcam' : 'Simulated Smart Junction'}</b>`);
+    reloadFeed();
+  } catch(e) {
+    toast('Error toggling camera: ' + e.message);
+  }
+}
+
+function reloadFeed() {
+  const feed = document.getElementById('feed');
+  if (feed) {
+    feed.src = '/api/camera/feed?ts=' + Date.now();
+  }
+}
+
+async function takeSnapshot() {
+  const box = document.getElementById('snap-box');
+  const img = document.getElementById('snap');
+  img.src = '/api/camera/snapshot?ts=' + Date.now();
+  box.classList.remove('d-none');
+  toast('Snapshot captured successfully');
+}
+
+async function refreshLive() {
+  await refreshStrip();
+
+  // Check hardware and signal status
+  try {
+    const hw = await (await fetch('/api/hardware/status')).json();
+    const sig = hw.signal_state || 'GREEN';
+    const cnt = hw.countdown != null ? String(hw.countdown).padStart(2, '0') + 's' : '00s';
+
+    document.getElementById('live-sig-timer').textContent = cnt;
+    const sigText = document.getElementById('live-sig-state');
+    sigText.textContent = sig;
+    sigText.className = 'fw-bold fs-5 mono ' + (sig === 'RED' ? 'text-danger' : sig === 'YELLOW' ? 'text-warning' : 'text-success');
+
+    const dot = document.getElementById('live-sig-dot');
+    dot.className = 'signal-light ' + sig.toLowerCase() + ' active';
+
+    document.getElementById('hud-signal').textContent = `SIGNAL: ${sig} (${cnt})`;
+
+    // IR laser status
+    const irTxt = document.getElementById('live-ir-text');
+    const irLine = document.getElementById('ir-laser');
+    if (hw.ir_sensor === 'TRIPPED' || hw.buzzer) {
+      if (irTxt) { irTxt.textContent = '🚨 BEAM TRIPPED!'; irTxt.className = 'fw-bold text-danger mono small'; }
+      if (irLine) irLine.classList.add('tripped');
     } else {
-      b.className = 'alert alert-danger';
-      b.textContent = 'Camera NOT AVAILABLE: ' + (cs.last_error || 'webcam busy/disconnected');
-      document.getElementById('feed-err').textContent = cs.last_error || '';
-      document.getElementById('feed-off').classList.add('show');
+      if (irTxt) { irTxt.textContent = '● BEAM INTACT'; irTxt.className = 'fw-bold text-success mono small'; }
+      if (irLine) irLine.classList.remove('tripped');
+    }
+  } catch(e) {}
+
+  // Fetch latest violation
+  try {
+    const rows = await (await fetch('/api/violations?limit=1')).json();
+    const box = document.getElementById('latest-box');
+    if (rows && rows.length) {
+      const v = rows[0];
+      box.innerHTML = `
+        <div class="d-flex align-items-center gap-2 mb-2">
+          ${plateBadge(v.vehicle_number)}
+          <span class="badge ${/paid/i.test(v.status)?'bg-success':'bg-danger'}">${v.violation_type}</span>
+        </div>
+        <div class="mb-2">
+          <img src="${v.evidence_image ? '/' + v.evidence_image : '/static/placeholder.svg'}"
+               class="rounded border border-secondary w-100" style="max-height:140px;object-fit:cover" alt="Evidence">
+        </div>
+        <div class="d-flex justify-content-between align-items-center">
+          <small class="text-secondary mono">${v.timestamp.replace('T', ' ')}</small>
+          <button class="btn btn-outline-light btn-sm py-0 px-2" onclick="openChallan(${v.id})">📋 E-Challan</button>
+        </div>
+      `;
+
+      if (lastVid && v.id > lastVid) {
+        toast(`🚨 New Violation: <b>${v.violation_type}</b> (${v.vehicle_number})`);
+      }
+      lastVid = Math.max(lastVid, v.id);
+    } else {
+      box.innerHTML = '<span class="text-secondary">No violations captured yet.</span>';
     }
   } catch(e) {}
 }
-async function refresh() {
-  const s = await refreshStrip();
-  if (s) document.getElementById('live-status').innerHTML =
-    `Signal: <b>${s.signal_state}</b><br>Arduino: <b>${s.arduino}</b><br>Camera: <b>${s.camera}</b><br>Helmet model: <b>${s.helmet_model ? 'installed' : 'not installed (heuristic only)'}</b>`;
-  const rows = await (await fetch('/api/violations?limit=1')).json();
-  document.getElementById('latest').innerHTML = rows.length ? `<table class="table"><tbody>${rowHtml(rows[0])}</tbody></table>` : 'None yet.';
-  if (rows.length && rows[0].id > lastId) {
-    if (lastId) toast('New violation: ' + rows[0].violation_type);
-    lastId = rows[0].id;
-  } else if (rows.length) lastId = Math.max(lastId, rows[0].id);
-}
-camCheck(); refresh();
-setInterval(() => { camCheck(); refresh(); }, 5000);
+
+refreshLive();
+setInterval(refreshLive, 2000);
 </script>
 {% endblock %}

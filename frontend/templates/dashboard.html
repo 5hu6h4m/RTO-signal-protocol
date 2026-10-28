@@ -1,56 +1,280 @@
-{% extends "base.html" %}{% block title %}Dashboard{% endblock %}
+{% extends "base.html" %}
+{% block title %}Junction Control & Dashboard{% endblock %}
+
 {% block content %}
-<h3 class="section-title">Junction Overview</h3>
-<p class="muted">Live signal + today's counts. Auto-refreshes every 5 seconds.</p>
-<div class="row g-3" id="cards">
-  <div class="col-6 col-md-2"><div class="card stat"><div class="card-body"><h6>Total</h6><h3 id="c-total">–</h3></div></div></div>
-  <div class="col-6 col-md-2"><div class="card stat s-green"><div class="card-body"><h6>Today</h6><h3 id="c-today">–</h3></div></div></div>
-  <div class="col-6 col-md-2"><div class="card stat s-red"><div class="card-body"><h6>Red Light</h6><h3 id="c-red">–</h3></div></div></div>
-  <div class="col-6 col-md-3"><div class="card stat s-yellow"><div class="card-body"><h6>No Helmet</h6><h3 id="c-helmet">–</h3></div></div></div>
-  <div class="col-6 col-md-3"><div class="card stat s-yellow"><div class="card-body"><h6>Triple Riding</h6><h3 id="c-triple">–</h3></div></div></div>
-</div>
-<div class="row mt-3 g-3">
-  <div class="col-md-8">
-    <div class="card"><div class="card-body">
-      <h5 class="section-title">Recent Violations</h5>
-      <div class="table-responsive"><table class="table table-hover"><thead><tr>
-      <th>Vehicle</th><th>Violation</th><th>Date</th><th>Time</th><th>Status</th><th>Evidence</th>
-      </tr></thead><tbody id="recent"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody></table></div>
-    </div></div>
+<!-- Viva Presentation Guide Bar -->
+<div class="viva-bar d-flex flex-wrap align-items-center justify-content-between gap-2">
+  <div>
+    <span class="viva-step-badge">🎓 PRESENTATION MODE</span>
+    <b class="text-white">Smart Traffic Control Room</b>
+    <span class="text-light-50 small ms-2 d-none d-md-inline">Hardware-free local presentation suite is active.</span>
   </div>
-  <div class="col-md-4">
-    <div class="card"><div class="card-body">
-      <h5 class="section-title">How it works</h5>
-      <ol class="muted small mb-2">
-        <li>Arduino runs GREEN 8s → YELLOW 2s → RED 8s.</li>
-        <li>During RED, IR trip → buzzer 2s + <code>VIOLATION_TRIGGERED</code>.</li>
-        <li>Server grabs webcam frame → YOLO + plate OCR → saves evidence.</li>
-        <li>Row appears here + on Live page instantly.</li>
-      </ol>
-      <a class="btn btn-primary w-100" href="/live">Open Live Monitoring</a>
-      <div class="muted small mt-2">Kal hardware pe: <code>DEMO_MODE=0</code> karke restart.</div>
-    </div></div>
+  <div class="d-flex gap-2">
+    <button class="btn btn-primary btn-sm" onclick="runScenario('1')">▶️ Test Red Light Jump</button>
+    <button class="btn btn-outline-light btn-sm" onclick="document.getElementById('viva-guide').classList.toggle('d-none')">
+      📖 Presentation Tips
+    </button>
   </div>
 </div>
+
+<!-- Collapsible Guide Details -->
+<div id="viva-guide" class="card mb-3 d-none">
+  <div class="card-body">
+    <h6 class="text-primary fw-bold mb-2">💡 Quick Viva Walkthrough (Follow these 4 steps in front of the examiner):</h6>
+    <div class="row g-2 small text-secondary">
+      <div class="col-md-3">
+        <b class="text-light">1. Signal & IR Protocol:</b> Explain how the Arduino/virtual controller runs the Green-Yellow-Red cycle while the IR beam monitors the physical stop line.
+      </div>
+      <div class="col-md-3">
+        <b class="text-light">2. Trigger Violation:</b> Click <b>"Cross Stop Line"</b> during RED to sound the buzzer and trigger instant ANPR plate reading & camera capture.
+      </div>
+      <div class="col-md-3">
+        <b class="text-light">3. Verify E-Challan:</b> Click <b>"E-Challan"</b> on any table row to display the official legal notice with QR code and print receipt.
+      </div>
+      <div class="col-md-3">
+        <b class="text-light">4. Vahan Registry & Repeaters:</b> Open <b>"Vahan Registry"</b> to show how repeat offenders accumulate compounding fines.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="card stat stat-cyan">
+      <div class="card-body p-3">
+        <h6>Total Cases</h6>
+        <h3 id="c-total" class="mono text-info">–</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card stat">
+      <div class="card-body p-3">
+        <h6>Today's Infractions</h6>
+        <h3 id="c-today" class="mono text-primary">–</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card stat stat-red">
+      <div class="card-body p-3">
+        <h6>Red Light Jumps</h6>
+        <h3 id="c-red" class="mono text-danger">–</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card stat stat-yellow">
+      <div class="card-body p-3">
+        <h6>No Helmet</h6>
+        <h3 id="c-helmet" class="mono text-warning">–</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card stat stat-green">
+      <div class="card-body p-3">
+        <h6>Triple Riding</h6>
+        <h3 id="c-triple" class="mono text-success">–</h3>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card stat">
+      <div class="card-body p-3">
+        <h6>Fines Compounded</h6>
+        <h3 id="c-fines" class="mono text-light" style="font-size:1.4rem">₹0</h3>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Interactive Controller & Recent Violations Row -->
+<div class="row g-3">
+  <!-- Left Side: Interactive Virtual Hardware Panel -->
+  <div class="col-lg-4">
+    <div class="card mb-3">
+      <div class="card-body">
+        <h5 class="section-title">Traffic Signal Controller</h5>
+        <p class="text-secondary small mb-3">Live junction signal phase. Override manually or keep in automatic cycle.</p>
+
+        <div class="d-flex align-items-center justify-content-around py-3 bg-dark rounded-3 mb-3 border border-secondary border-opacity-25">
+          <!-- 3-Aspect Traffic Signal Head -->
+          <div class="traffic-signal-box">
+            <div id="sig-lamp-red" class="signal-light red"></div>
+            <div id="sig-lamp-yellow" class="signal-light yellow"></div>
+            <div id="sig-lamp-green" class="signal-light green active"></div>
+          </div>
+          <!-- Digital Timer -->
+          <div class="text-center">
+            <div class="text-secondary small text-uppercase fw-bold mb-1">Phase Timer</div>
+            <div id="sig-timer" class="signal-countdown-badge">08s</div>
+            <div id="sig-label" class="badge bg-success mt-2 px-3 py-1 text-uppercase">GREEN</div>
+          </div>
+        </div>
+
+        <!-- Signal Manual Overrides -->
+        <div class="d-grid gap-2">
+          <div class="btn-group w-100" role="group">
+            <button class="btn btn-outline-danger btn-sm" onclick="setSignal('RED')">🔴 Force RED</button>
+            <button class="btn btn-outline-warning btn-sm" onclick="setSignal('YELLOW')">🟡 Force YELLOW</button>
+            <button class="btn btn-outline-success btn-sm" onclick="setSignal('GREEN')">🟢 Force GREEN</button>
+          </div>
+          <button class="btn btn-outline-light btn-sm" onclick="setSignal('AUTO')">🔄 Resume Auto Cycle (8s/3s/8s)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stop-Line IR Sensor Simulator -->
+    <div class="card mb-3">
+      <div class="card-body">
+        <h5 class="section-title">Stop-Line Obstacle Sensor</h5>
+        <div class="ir-beam-wrap mb-3">
+          <div>
+            <span class="small text-muted d-block fw-bold">VIRTUAL IR BEAM SENSOR</span>
+            <span id="ir-status-text" class="fw-bold text-success mono small">● BEAM INTACT (Armed)</span>
+          </div>
+          <div id="ir-laser" class="ir-laser-line w-25"></div>
+        </div>
+
+        <button class="btn btn-danger w-100 py-2 mb-2 shadow fw-bold" onclick="triggerIRBeam()">
+          🚗 Vehicle Crosses Stop-Line <span class="badge bg-black bg-opacity-50 ms-1">Spacebar</span>
+        </button>
+        <div class="text-secondary small text-center">
+          Crossing the stop-line during <b>RED</b> sounds the piezo buzzer and records a red-light violation with an authentic CCTV evidence snapshot.
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Scenarios for Viva -->
+    <div class="card">
+      <div class="card-body">
+        <h5 class="section-title">Viva Demo Scenarios</h5>
+        <div class="d-grid gap-2">
+          <button class="btn btn-outline-light btn-sm text-start" onclick="runScenario('1')">
+            <b>1. Car Jumps Red Light</b> <span class="badge bg-danger ms-auto float-end">MH12DE1432</span>
+          </button>
+          <button class="btn btn-outline-light btn-sm text-start" onclick="runScenario('2')">
+            <b>2. Rider Without Helmet</b> <span class="badge bg-warning text-dark ms-auto float-end">MH14AB9821</span>
+          </button>
+          <button class="btn btn-outline-light btn-sm text-start" onclick="runScenario('3')">
+            <b>3. Triple Riding on Bike</b> <span class="badge bg-info text-dark ms-auto float-end">MH15BT4554</span>
+          </button>
+          <button class="btn btn-outline-light btn-sm text-start" onclick="runScenario('4')">
+            <b>4. Over-Speeding Vehicle</b> <span class="badge bg-secondary ms-auto float-end">DL08CA7721</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Side: Recent Violations Table -->
+  <div class="col-lg-8">
+    <div class="card h-100">
+      <div class="card-body d-flex flex-column">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="section-title mb-0">Live Enforcement Log</h5>
+            <small class="text-secondary">Real-time violations captured by the Smart Junction camera.</small>
+          </div>
+          <div class="d-flex gap-2">
+            <a href="/live" class="btn btn-primary btn-sm">📹 Open Live CCTV</a>
+            <a href="/violations" class="btn btn-outline-light btn-sm">View All</a>
+          </div>
+        </div>
+
+        <div class="table-responsive flex-grow-1">
+          <table class="table table-hover">
+            <thead>
+              <tr>
+                <th>Vehicle Plate</th>
+                <th>Violation Type</th>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Status</th>
+                <th>Evidence</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="recent">
+              <tr><td colspan="7" class="text-center text-secondary py-4">Connecting to surveillance log…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script>
 let lastMaxId = 0;
-async function load() {
+
+async function loadDashboard() {
   await refreshStrip();
-  const st = await (await fetch('/api/statistics')).json();
-  const t = st.today_by_type || {};
-  document.getElementById('c-total').textContent = st.total_violations ?? 0;
-  document.getElementById('c-today').textContent = st.today_total ?? 0;
-  document.getElementById('c-red').textContent = t['Red Light Violation'] || 0;
-  document.getElementById('c-helmet').textContent = t['No Helmet'] || 0;
-  document.getElementById('c-triple').textContent = t['Triple Riding'] || 0;
-  const rows = await (await fetch('/api/violations?limit=10')).json();
-  document.getElementById('recent').innerHTML = rows.length ? rows.map(rowHtml).join('') : '<tr><td colspan="6" class="muted">No violations yet — try Live page demo buttons.</td></tr>';
-  if (rows.length) {
-    const mx = Math.max(...rows.map(r => r.id || 0));
-    if (lastMaxId && mx > lastMaxId) toast('New violation: ' + rows[0].violation_type + ' (' + rows[0].vehicle_number + ')');
-    lastMaxId = Math.max(lastMaxId, mx);
-  }
+
+  // Load Statistics
+  try {
+    const st = await (await fetch('/api/statistics')).json();
+    const t = st.today_by_type || {};
+    document.getElementById('c-total').textContent = st.total_violations ?? 0;
+    document.getElementById('c-today').textContent = st.today_total ?? 0;
+    document.getElementById('c-red').textContent = t['Red Light Violation'] || 0;
+    document.getElementById('c-helmet').textContent = t['No Helmet'] || 0;
+    document.getElementById('c-triple').textContent = t['Triple Riding'] || 0;
+    document.getElementById('c-fines').textContent = '₹' + (st.total_fines || 0).toLocaleString('en-IN');
+  } catch(e) {}
+
+  // Load Hardware Status & Update Signal Lights
+  try {
+    const hw = await (await fetch('/api/hardware/status')).json();
+    const sig = hw.signal_state || 'GREEN';
+    const cnt = hw.countdown != null ? String(hw.countdown).padStart(2, '0') + 's' : '00s';
+
+    document.getElementById('sig-timer').textContent = cnt;
+    const label = document.getElementById('sig-label');
+    label.textContent = sig;
+    label.className = 'badge px-3 py-1 text-uppercase ' +
+      (sig === 'RED' ? 'bg-danger' : sig === 'YELLOW' ? 'bg-warning text-dark' : 'bg-success');
+
+    // Update LED lamps
+    ['red', 'yellow', 'green'].forEach(c => {
+      const el = document.getElementById('sig-lamp-' + c);
+      if (el) el.classList.toggle('active', sig === c.toUpperCase());
+    });
+
+    // Update IR beam indicator
+    const irTxt = document.getElementById('ir-status-text');
+    const irLine = document.getElementById('ir-laser');
+    if (hw.ir_sensor === 'TRIPPED' || hw.buzzer) {
+      if (irTxt) { irTxt.textContent = '🚨 BEAM TRIPPED! ALARM ACTIVE'; irTxt.className = 'fw-bold text-danger mono small'; }
+      if (irLine) irLine.classList.add('tripped');
+    } else {
+      if (irTxt) { irTxt.textContent = '● BEAM INTACT (Armed)'; irTxt.className = 'fw-bold text-success mono small'; }
+      if (irLine) irLine.classList.remove('tripped');
+    }
+  } catch(e) {}
+
+  // Load Recent Violations
+  try {
+    const rows = await (await fetch('/api/violations?limit=8')).json();
+    const tbody = document.getElementById('recent');
+    if (rows && rows.length) {
+      tbody.innerHTML = rows.map(rowHtml).join('');
+      const mx = Math.max(...rows.map(r => r.id || 0));
+      if (lastMaxId && mx > lastMaxId) {
+        toast(`🚨 <b>New Violation Captured:</b> ${rows[0].violation_type} (${rows[0].vehicle_number})`);
+      }
+      lastMaxId = Math.max(lastMaxId, mx);
+    } else {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-secondary py-4">No violations captured yet. Use the controller buttons on the left to simulate one!</td></tr>';
+    }
+  } catch(e) {}
 }
-load(); setInterval(load, 5000);
+
+loadDashboard();
+setInterval(loadDashboard, 2000);
 </script>
 {% endblock %}

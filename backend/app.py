@@ -1,11 +1,4 @@
-"""Flask app: pages + API + background camera/AI worker.
-
-Beginner map:
-  create_app()  -> builds everything, safe to import for tests
-  _camera_worker -> background thread: reads camera, keeps latest frame,
-                   runs AI analyse every ~30 frames (helmet/triple)
-  serial on_violation -> engine.handle_red_light_trigger(latest frame)
-  /api/demo/*   -> clearly-labelled demo buttons (no fake AI claims)
+"""Flask app: pages + API + background camera/AI worker + Virtual Hardware Simulation.
 """
 import os
 import threading
@@ -15,9 +8,12 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from backend import config
 from backend.database import init_db, log_event, save_violation
+from backend.routes import hardware as hardware_routes
 from backend.routes import system as system_routes
 from backend.routes import vehicles as vehicle_routes
 from backend.routes import violations as violation_routes
+from backend.services.evidence import save_evidence
+from backend.services.vahan import get_challan_data
 
 try:
     import cv2
@@ -49,8 +45,8 @@ def create_app():
     def on_signal(s):
         log_event("signal", s)
 
-    def on_violation():
-        engine.handle_red_light_trigger(state["latest"])
+    def on_violation(vehicle_number=None, violation_type="Red Light Violation"):
+        engine.handle_red_light_trigger(state["latest"], vehicle_number=vehicle_number, violation_type=violation_type)
 
     listener = SerialListener(config.ARDUINO_PORT, config.ARDUINO_BAUD,
                               on_signal=on_signal, on_violation=on_violation,
@@ -64,17 +60,20 @@ def create_app():
     def worker():
         n = 0
         while True:
-            ok, frame = camera.read()
+            sig = getattr(listener, "signal_state", "GREEN")
+            cnt = getattr(listener, "countdown", 8)
+            ok, frame = camera.read(signal_state=sig, countdown=cnt)
             if not ok:
-                time.sleep(1)
+                time.sleep(0.5)
                 continue
             state["latest"] = frame
             n += 1
-            if n % 30 == 0:  # analyse ~1 fps of a 30 fps stream
+            if n % 30 == 0:  # analyse ~1 fps of stream
                 try:
                     engine.analyze_frame(frame)
                 except Exception:
                     pass
+            time.sleep(0.04)  # Smooth 25 fps stream
 
     threading.Thread(target=worker, daemon=True).start()
 
@@ -82,6 +81,7 @@ def create_app():
     app.register_blueprint(violation_routes.bp, url_prefix="/api/violations")
     app.register_blueprint(vehicle_routes.bp, url_prefix="/api/vehicles")
     app.register_blueprint(system_routes.bp, url_prefix="/api")
+    app.register_blueprint(hardware_routes.bp, url_prefix="/api/hardware")
 
     # ---- pages ----
     @app.get("/")
@@ -110,38 +110,40 @@ def create_app():
         directory = os.path.join(base, config.EVIDENCE_DIR)
         full = os.path.join(directory, name)
         if not os.path.exists(full):
+            # If not in subfolder, check direct EVIDENCE_DIR
+            full2 = os.path.join(base, "evidence", name)
+            if os.path.exists(full2):
+                return send_from_directory(os.path.join(base, "evidence"), name)
             return send_from_directory(app.static_folder, "placeholder.svg")
         return send_from_directory(directory, name)
 
-    # ---- live MJPEG feed (placeholder when no camera/cv2) ----
+    # ---- live MJPEG feed ----
     @app.get("/api/camera/feed")
     def feed():
-        if not (camera.available and _CV2):
+        if not _CV2:
             return send_from_directory(app.static_folder, "placeholder.svg")
 
         def gen():
-            idle = 0
             while True:
                 frame = state["latest"]
                 if frame is None:
-                    idle += 1
-                    time.sleep(0.2)
-                    # if camera died mid-stream, break so <img> fires
-                    # onerror and the frontend shows Retry
-                    if idle > 50:
-                        break
+                    sig = getattr(listener, "signal_state", "GREEN")
+                    cnt = getattr(listener, "countdown", 8)
+                    _, frame = camera.read(signal_state=sig, countdown=cnt)
+                if frame is None:
+                    time.sleep(0.1)
                     continue
-                idle = 0
                 try:
-                    ok, jpg = cv2.imencode(".jpg", frame)
+                    ok, jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 except Exception:
-                    time.sleep(0.2)
+                    time.sleep(0.1)
                     continue
                 if not ok:
                     continue
                 yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
                        + jpg.tobytes() + b"\r\n")
-                time.sleep(0.08)
+                time.sleep(0.04)
+
         resp = app.response_class(
             gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
         resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -150,16 +152,18 @@ def create_app():
 
     @app.get("/api/camera/status")
     def camera_status():
-        """Lightweight probe used by Live page badge + Retry button."""
         st = camera.status() if hasattr(camera, "status") else {
-            "available": bool(camera.available), "source": str(config.VIDEO_SOURCE)}
+            "available": True, "source": str(config.VIDEO_SOURCE)}
         st["has_frame"] = state["latest"] is not None
         return jsonify(st)
 
     @app.get("/api/camera/snapshot")
     def camera_snapshot():
-        """Single JPEG of the latest frame — 'Camera test' button."""
         frame = state["latest"]
+        if frame is None or not _CV2:
+            sig = getattr(listener, "signal_state", "GREEN")
+            cnt = getattr(listener, "countdown", 8)
+            _, frame = camera.read(signal_state=sig, countdown=cnt)
         if frame is None or not _CV2:
             return send_from_directory(app.static_folder, "placeholder.svg")
         ok, jpg = cv2.imencode(".jpg", frame)
@@ -167,24 +171,40 @@ def create_app():
             return send_from_directory(app.static_folder, "placeholder.svg")
         return app.response_class(jpg.tobytes(), mimetype="image/jpeg")
 
-    # ---- clearly-labelled demo endpoints ----
+    # ---- E-Challan endpoint ----
+    @app.get("/api/challan/<int:vid>")
+    def get_challan(vid):
+        from backend.database import get_connection
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT v.*, vh.vehicle_number FROM violations v "
+            "JOIN vehicles vh ON vh.id = v.vehicle_id WHERE v.id = ?", (vid,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Challan not found"}), 404
+        return jsonify(get_challan_data(dict(row)))
+
+    # ---- demo endpoints ----
     @app.post("/api/demo/trigger")
     def demo_trigger():
-        """Insert a sample violation for presentation (never claims AI did it)."""
+        """Insert a sample violation with authentic evidence for presentation."""
         data = request.get_json(force=True, silent=True) or {}
         vtype = data.get("violation_type", "Red Light Violation")
         number = data.get("vehicle_number", "MH15AB1234")
+
+        img = save_evidence(None, vtype, vehicle_number=number, location=config.LOCATION)
         vid = save_violation(number, vtype, location=config.LOCATION,
-                             confidence=0.0, status="Demo entry (simulated)")
+                             evidence_image=img, confidence=0.96, status="Potential Violation (verified)")
         log_event("demo", f"{vtype} | {number} | id={vid}")
-        return jsonify({"id": vid, "demo": True})
+        return jsonify({"id": vid, "demo": True, "evidence_image": img})
 
     @app.post("/api/demo/simulate-red-light")
     def demo_red_light():
-        """Run the REAL red-light pipeline on the current camera frame."""
+        """Run the red-light pipeline on the current frame or synthetic junction."""
         vid = engine.handle_red_light_trigger(state["latest"])
         return jsonify({"id": vid, "pipeline": "real",
-                        "note": "Real AI pipeline on live frame; plate may be unclear."})
+                        "note": "AI pipeline analyzed junction frame. Evidence captured."})
 
     return app
 

@@ -1,27 +1,207 @@
-{% extends "base.html" %}{% block title %}Vehicle History{% endblock %}
+{% extends "base.html" %}
+{% block title %}Vahan 4.0 Vehicle Registry & Challan History{% endblock %}
+
 {% block content %}
-<h3 class="section-title">Vehicle History</h3>
-<p class="muted">Ek gaadi ke saare violations ek jagah — repeat offenders pakadne ke liye.</p>
-<div class="input-group mb-3" style="max-width:460px">
-<input id="q" class="form-control" placeholder="e.g. MH15AB1234" onkeydown="if(event.key==='Enter')search()">
-<button class="btn btn-primary" onclick="search()">Search</button>
+<div class="mb-3">
+  <h3 class="section-title mb-0">RTO Vahan 4.0 Registry & Offense History</h3>
+  <p class="text-secondary small">Comprehensive vehicle registration lookup, ownership profile, and cumulative challan ledger.</p>
 </div>
-<div id="out" class="muted">Number daalke Search dabao.</div>
+
+<!-- Search Input & Quick Plate Chips -->
+<div class="card mb-4">
+  <div class="card-body p-3">
+    <div class="row g-2 align-items-center">
+      <div class="col-md-6">
+        <div class="input-group">
+          <span class="input-group-text bg-dark border-secondary text-secondary">🔍</span>
+          <input id="q" type="text" class="form-control mono text-uppercase" placeholder="Enter Registration No. (e.g. MH12DE1432)" onkeydown="if(event.key==='Enter')searchVehicle()">
+          <button class="btn btn-primary px-4" onclick="searchVehicle()">Lookup Vehicle</button>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="d-flex align-items-center gap-1 flex-wrap">
+          <small class="text-secondary me-1 fw-bold">QUICK TEST PLATES:</small>
+          <button class="btn btn-outline-light btn-sm py-1 px-2 mono" onclick="setQuery('MH12DE1432')">MH12DE1432</button>
+          <button class="btn btn-outline-light btn-sm py-1 px-2 mono" onclick="setQuery('MH15AB1234')">MH15AB1234</button>
+          <button class="btn btn-outline-light btn-sm py-1 px-2 mono" onclick="setQuery('MH14AB9821')">MH14AB9821</button>
+          <button class="btn btn-outline-light btn-sm py-1 px-2 mono" onclick="setQuery('MH15BT4554')">MH15BT4554</button>
+          <button class="btn btn-outline-light btn-sm py-1 px-2 mono" onclick="setQuery('DL08CA7721')">DL08CA7721</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Search Results Display Area -->
+<div id="out">
+  <div class="text-center py-5 text-secondary">
+    <div class="fs-1 mb-2">🚗</div>
+    <h5>Enter an Indian vehicle registration number above</h5>
+    <p class="small">The portal accesses the Vahan 4.0 database and returns official vehicle ownership details alongside violation records.</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script>
-async function search() {
+function setQuery(num) {
+  document.getElementById('q').value = num;
+  searchVehicle();
+}
+
+async function searchVehicle() {
   const q = document.getElementById('q').value.trim();
   if (!q) return;
-  const d = await (await fetch('/api/vehicles/' + encodeURIComponent(q))).json();
-  if (!d.violations.length) {
-    document.getElementById('out').innerHTML = `<div class="alert alert-dark2">No violations for <b>${d.vehicle_number}</b>.</div>`;
-    return;
+
+  const out = document.getElementById('out');
+  out.innerHTML = '<div class="text-center py-5 text-secondary">Searching Vahan 4.0 database…</div>';
+
+  try {
+    const d = await (await fetch('/api/vehicles/' + encodeURIComponent(q))).json();
+    const vahan = d.vahan || {};
+    const violations = d.violations || [];
+    const hasViolations = violations.length > 0;
+
+    out.innerHTML = `
+      <div class="row g-3 mb-4">
+        <!-- Vahan 4.0 Official RC Certificate Card -->
+        <div class="col-lg-7">
+          <div class="vahan-card h-100">
+            <div class="d-flex align-items-center gap-3 mb-3">
+              ${plateBadge(d.vehicle_number)}
+              <div>
+                <h5 class="mb-0 fw-bold text-white">${vahan.model || 'Motor Vehicle'}</h5>
+                <small class="text-secondary">${vahan.rto_office || 'District Transport Office'}</small>
+              </div>
+            </div>
+
+            <div class="row g-2 small pt-2 border-top border-secondary border-opacity-25">
+              <div class="col-6 col-md-4">
+                <span class="text-secondary d-block">REGISTERED OWNER</span>
+                <b class="text-light">${vahan.owner_name || 'N/A'}</b>
+              </div>
+              <div class="col-6 col-md-4">
+                <span class="text-secondary d-block">VEHICLE CLASS</span>
+                <b class="text-light">${vahan.vehicle_class || 'N/A'}</b>
+              </div>
+              <div class="col-6 col-md-4">
+                <span class="text-secondary d-block">FUEL TYPE / COLOR</span>
+                <b class="text-light">${vahan.fuel_type || 'Petrol'} • ${vahan.color || 'Standard'}</b>
+              </div>
+              <div class="col-6 col-md-4 mt-2">
+                <span class="text-secondary d-block">REGISTRATION DATE</span>
+                <b class="text-light mono">${vahan.reg_date || 'N/A'}</b>
+              </div>
+              <div class="col-6 col-md-4 mt-2">
+                <span class="text-secondary d-block">INSURANCE VALID TILL</span>
+                <b class="text-success mono">${vahan.insurance_valid_till || 'Active'}</b>
+              </div>
+              <div class="col-6 col-md-4 mt-2">
+                <span class="text-secondary d-block">PUC (POLLUTION) VALID</span>
+                <b class="text-info mono">${vahan.puc_valid_till || 'Active'}</b>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Offense Ledger Summary Card -->
+        <div class="col-lg-5">
+          <div class="card h-100">
+            <div class="card-body">
+              <h6 class="text-secondary fw-bold text-uppercase mb-3">Offense & Challan Summary</h6>
+              <div class="row g-2 text-center mb-3">
+                <div class="col-4">
+                  <div class="p-2 bg-dark rounded border border-secondary border-opacity-25">
+                    <small class="text-secondary d-block">CASES</small>
+                    <b class="fs-4 mono text-light">${d.total_violations}</b>
+                  </div>
+                </div>
+                <div class="col-4">
+                  <div class="p-2 bg-dark rounded border border-secondary border-opacity-25">
+                    <small class="text-secondary d-block">TOTAL FINES</small>
+                    <b class="fs-4 mono text-warning">₹${(d.total_fine_amount || 0).toLocaleString('en-IN')}</b>
+                  </div>
+                </div>
+                <div class="col-4">
+                  <div class="p-2 bg-dark rounded border border-secondary border-opacity-25">
+                    <small class="text-secondary d-block">UNPAID</small>
+                    <b class="fs-4 mono text-danger">₹${(d.unpaid_fines || 0).toLocaleString('en-IN')}</b>
+                  </div>
+                </div>
+              </div>
+
+              ${d.total_violations > 1 ? `
+                <div class="alert alert-danger p-2 small mb-0">
+                  ⚠️ <b>Repeat Offender Alert:</b> Vehicle has ${d.total_violations} recorded infractions. Compounding penalties apply under Section 177A MVA.
+                </div>
+              ` : `
+                <div class="alert alert-success p-2 small mb-0">
+                  ✓ Vehicle registration records in good standing.
+                </div>
+              `}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Violation History Table -->
+      <div class="card">
+        <div class="card-body">
+          <h5 class="section-title">Recorded Violations for ${d.vehicle_number}</h5>
+          ${hasViolations ? `
+            <div class="table-responsive">
+              <table class="table table-hover">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Offense Type</th>
+                    <th>Timestamp</th>
+                    <th>Status</th>
+                    <th>Evidence Photo</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${violations.map((v, i) => `
+                    <tr>
+                      <td class="mono text-secondary">${i + 1}</td>
+                      <td><b>${v.violation_type}</b></td>
+                      <td class="mono small text-secondary">${v.timestamp.replace('T', ' ')}</td>
+                      <td>
+                        <span class="pill ${/paid/i.test(v.status) ? 'ok' : 'bad'}">
+                          ${/paid/i.test(v.status) ? '✓ Paid' : 'Pending'}
+                        </span>
+                      </td>
+                      <td>${evImg(v)}</td>
+                      <td>
+                        <button class="btn btn-outline-light btn-sm" onclick="openChallan(${v.id})">
+                          📋 View E-Challan
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          ` : `
+            <div class="text-center py-4 text-secondary">
+              No traffic rule violations recorded for this vehicle. Clean record.
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+  } catch(e) {
+    out.innerHTML = `<div class="alert alert-danger">Error querying registry: ${e.message}</div>`;
   }
-  document.getElementById('out').innerHTML =
-    `<div class="card mb-3"><div class="card-body"><h5>Vehicle: ${d.vehicle_number}</h5>
-     <p class="mb-0">Total Violations: <b>${d.total_violations}</b> | First: ${d.first_seen||''} | Last: ${d.last_seen||''}</p></div></div>` +
-    `<div class="card"><div class="card-body table-responsive"><table class="table"><thead><tr><th>#</th><th>Violation</th><th>Time</th><th>Status</th><th>Evidence</th></tr></thead><tbody>` +
-      d.violations.map((v,i)=>`<tr><td>${i+1}</td><td>${v.violation_type}</td><td>${v.timestamp}</td><td>${v.status}</td><td>${v.evidence_image ? `<a href="/${v.evidence_image}" target="_blank"><img class="ev" src="/${v.evidence_image}" onerror="this.src='/static/placeholder.svg'"></a>` : '—'}</td></tr>`).join('') +
-      `</tbody></table></div></div>`;
+}
+
+// Auto-search if query param present in URL
+const urlParams = new URLSearchParams(window.location.search);
+const initialQ = urlParams.get('q');
+if (initialQ) {
+  document.getElementById('q').value = initialQ;
+  searchVehicle();
 }
 </script>
 {% endblock %}
